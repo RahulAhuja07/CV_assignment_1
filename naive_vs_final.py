@@ -27,48 +27,46 @@ OUTDIR.mkdir(exist_ok=True)
 
 def build_comparison(query_path: Path, out_path: Path):
     print(f'\n=== Naive vs. final comparison for {query_path.name} ===')
-    templates = [str(p) for p in TEMPLATES if p.exists()]
+    templates = [str(template_path) for template_path in TEMPLATES if template_path.exists()]
     pipeline = ObjectRecognitionPipeline(templates, str(query_path))
 
-    # Naive panel: raw Lowe's-ratio matches for the front template, before any
-    # geometric verification (Hough voting or RANSAC) has had a chance to
-    # reject the ones that are just coincidental background noise.
-    front = pipeline.templates[0]
-    pipeline.template = front['img']
-    pipeline.template_gray = front['gray']
-    pipeline.template_kp = front['kp']
-    pipeline.template_desc = front['desc']
-    raw_matches = pipeline.manual_feature_matching()
+    # Show the raw matches before the later checks remove bad matches.
+    front_template = pipeline.templates[0]
+    pipeline.template = front_template['img']
+    pipeline.template_gray = front_template['gray']
+    pipeline.template_keypoints = front_template['keypoints']
+    pipeline.template_descriptors = front_template['descriptors']
+    raw_matches = pipeline.find_feature_matches()
 
-    dmatches = [cv2.DMatch(_queryIdx=t_idx, _trainIdx=q_idx, _distance=0)
-                for t_idx, q_idx in raw_matches]
-    naive_img = cv2.drawMatches(
-        front['img'], front['kp'],
-        pipeline.query, pipeline.query_kp,
-        dmatches, None,
+    display_matches = [cv2.DMatch(_queryIdx=template_index, _trainIdx=query_index, _distance=0)
+                       for template_index, query_index in raw_matches]
+    raw_match_image = cv2.drawMatches(
+        front_template['img'], front_template['keypoints'],
+        pipeline.query, pipeline.query_keypoints,
+        display_matches, None,
         matchColor=(0, 0, 255), singlePointColor=(255, 0, 0),
         flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS
     )
 
-    # Final panel: the full pipeline (both templates, Hough + RANSAC + NMS).
+    # Run all checks and draw the final detections.
     pipeline.detect_objects()
-    final_img = pipeline.query.copy()
-    for idx, det in enumerate(pipeline.detections, 1):
-        box = det['box'].astype(int)
-        colour = (0, 255, 255) if det.get('source') == 'yellow_red_fallback' else (0, 255, 0)
-        cv2.polylines(final_img, [box], True, colour, 3)
-        anchor = tuple(np.min(box, axis=0))
-        cv2.putText(final_img, f'Maggi {idx}', anchor, cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65, colour, 2, cv2.LINE_AA)
+    final_detection_image = pipeline.query.copy()
+    for detection_number, detection in enumerate(pipeline.detections, 1):
+        bounding_box = detection['box'].astype(int)
+        box_color = (0, 255, 255) if detection.get('source') == 'yellow_red_fallback' else (0, 255, 0)
+        cv2.polylines(final_detection_image, [bounding_box], True, box_color, 3)
+        label_position = tuple(np.min(bounding_box, axis=0))
+        cv2.putText(final_detection_image, f'Maggi {detection_number}', label_position, cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65, box_color, 2, cv2.LINE_AA)
 
     fig, axes = plt.subplots(1, 2, figsize=(20, 10))
-    axes[0].imshow(cv2.cvtColor(naive_img, cv2.COLOR_BGR2RGB))
+    axes[0].imshow(cv2.cvtColor(raw_match_image, cv2.COLOR_BGR2RGB))
     axes[0].set_title(f'Naive matching: {len(raw_matches)} raw correspondences\n'
                        f"(after Lowe's ratio test, before Hough/RANSAC)",
                        fontsize=14, fontweight='bold')
     axes[0].axis('off')
 
-    axes[1].imshow(cv2.cvtColor(final_img, cv2.COLOR_BGR2RGB))
+    axes[1].imshow(cv2.cvtColor(final_detection_image, cv2.COLOR_BGR2RGB))
     axes[1].set_title(f'Final result: {len(pipeline.detections)} verified detections\n'
                        f'(Generalized Hough Transform + RANSAC + NMS)',
                        fontsize=14, fontweight='bold')
