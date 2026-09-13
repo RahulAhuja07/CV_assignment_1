@@ -66,5 +66,3 @@ python verify_detections.py # quick visual sanity check against Cluster.jpeg
    the results are pooled.
 6. **Post-filtering + IoU Non-Maximum Suppression** removes weak/duplicate
    detections so one clean box remains per physical packet.
-
-See `report/report.tex` for the full mathematical write-up.
